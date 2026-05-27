@@ -1,0 +1,20 @@
+import FormularioReserva from './components/FormularioReserva';
+
+function App() {
+  return (
+    <div className="min-h-screen bg-gray-50 py-10">
+      <header className="mb-8 text-center">
+        <h1 className="text-3xl font-extrabold text-gray-900 tracking-tight">
+          Portal de Comunidad Edificio
+        </h1>
+        <p className="text-gray-500 mt-2">Sistema de Gestión de Reservas</p>
+      </header>
+      
+      <main>
+        <FormularioReserva />
+      </main>
+    </div>
+  );
+}
+
+export default App;
