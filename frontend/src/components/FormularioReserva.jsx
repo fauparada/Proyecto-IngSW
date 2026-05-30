@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 
 export default function FormularioReserva() {
     const [fecha, setFecha] = useState('');
@@ -8,6 +8,26 @@ export default function FormularioReserva() {
     const [mensajeExito, setMensajeExito] = useState('');
     const [mensajeError, setMensajeError] = useState('');
     const [cargando, setCargando] = useState(false);
+    const [bloquesOcupados, setBloquesOcupados] = useState([]);
+
+    useEffect(() => {
+      const consultarDisponibilidad = async () => {
+        if (!fecha) return;
+
+        try {
+          const id_espacio = 2;
+          const response = await fetch(`http://localhost:4005/api/disponibilidad?fecha=${fecha}&id_espacio=${id_espacio}`);
+          if (response.ok) {
+            const data = await response.json();
+            setBloquesOcupados(data.bloquesOcupados);
+          }
+        } catch (error) {
+          console.error("Error al conectar con el endpoint de disponibilidad");
+        }
+      };
+
+      consultarDisponibilidad();
+    }, [fecha]);
 
     const handleSubmit = async (e) => {
         e.preventDefault();
@@ -125,6 +145,27 @@ export default function FormularioReserva() {
           {mensajeError}
         </div>
       )}
+
+      <div className='mt-6 pt-6 border-t border-gray-100'>
+        <h3 className='text-sm font-bold text-gray-700 mb-2'>Bloques ocupados para este día:</h3>
+        {bloquesOcupados.length === 0 ? (
+          <p className='text-xs text-green-600 font-medium bg-green-50 p-2 rounded-lg text-center'>
+            ¡Todo el día disponible! Elige el horario que desees.
+          </p>
+        ) : (
+          <div className='space-y-1.5'>
+            {bloquesOcupados.map((bloque, index) => (
+              <div key={index} className='flex justify-between items-center text-xs bg-amber-50 border border-amber-200 text-amber-800 p-2 rounded-lg font-medium'>
+                <span>{bloque.hora_inicio.slice(0, 5)} - {bloque.hora_fin.slice(0, 5)}</span>
+                <span className='text-[10px] uppercase px-1.5 py-0.5 bg-amber-200 rounded text-amber-900'>
+                  {bloque.estado}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
     </div>
   );
 }

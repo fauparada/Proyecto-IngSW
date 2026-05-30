@@ -20,7 +20,47 @@ Bun.serve({
             });
         }
 
-        //1. Endpoint para crear una reserva digital (IIDS-10)
+        //1. Endpoint ver disponibilidad (IIDS-17)
+        if (req.method === "GET" && url.pathname === "/api/disponibilidad") {
+            try {
+                //Capturamos los parámetros de la url
+                const fecha = url.searchParams.get("fecha");
+                const id_espacio = url.searchParams.get("id_espacio");
+
+                if (!fecha || !id_espacio) {
+                    return new Response(JSON.stringify({ error: "Faltan parámetros: fecha e  id_espacio son obligatorios" }), {
+                        status: 400,
+                        headers: { "Content-Type": "application/json" }
+                    });
+                }
+
+                //Consultamos a Postgres las reservas existentes para ese día y espacio
+                const bloquesOcupados = await db
+                    .select({
+                        hora_inicio: reservas.hora_inicio,
+                        hora_fin: reservas.hora_fin,
+                        estado: reservas.estado
+                    })
+                    .from(reservas) //solo mostramos bloques que no estén rechazados
+                    .where(and(eq(reservas.fecha, fecha), eq(reservas.id_espacio, Number(id_espacio)), or(eq(reservas.estado, "Pendiente"), eq(reservas.estado, "Aprobada"))));
+
+                //retornamos la lista de bloques tomados al frontend
+                return new Response(JSON.stringify({ bloquesOcupados }), {
+                    status: 200,
+                    headers: {
+                        "Content-Type": "application/json",
+                        "Access-Control-Allow-Origin": "*" //CORS habilitado
+                    }
+                });
+            } catch (error) {
+                return new Response(JSON.stringify({ error: "Error al consultar la disponibilidad" }), {
+                    status: 500,
+                    headers: { "Content-Type": "application/json" }
+                });
+            }
+        }
+
+        //2. Endpoint para crear una reserva digital (IIDS-10)
         if (req.method === "POST" && url.pathname === "/api/reservas") {
             try {
                 const body = await req.json();
