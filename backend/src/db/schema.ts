@@ -12,4 +12,5 @@ export const reservas = pgTable('reservas', {
     //Llaves foráneas (IDs que conectan c/ otras clases)
     id_usuario: integer('id_usuario').notNull(),
     id_espacio: integer('id_espacio').notNull(),
+    nombres_invitados: text('nombres_invitados').array()
 });

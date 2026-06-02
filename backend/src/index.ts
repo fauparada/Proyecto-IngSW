@@ -64,13 +64,24 @@ Bun.serve({
         if (req.method === "POST" && url.pathname === "/api/reservas") {
             try {
                 const body = await req.json();
-                const { fecha, hora_inicio, hora_fin, cant_invitados, id_usuario, id_espacio } = body;
+                const { fecha, hora_inicio, hora_fin, cant_invitados, nombres_invitados, id_usuario, id_espacio } = body;
 
                 //Validación básica de campos obligatorios
                 if (!fecha || !hora_inicio || !hora_fin || !cant_invitados || !id_usuario || !id_espacio) {
                     return new Response(JSON.stringify({ error: "Faltan campos obligatorios" }), {
                         status: 400,
                         headers: { "Content-Type": "application/json" }
+                    });
+                }
+
+                //Validación aforo máximo
+                const CAPACIDAD_MAXIMA = 20;
+                if(Number(cant_invitados) > CAPACIDAD_MAXIMA) {
+                    return new Response(JSON.stringify({
+                        error: `Capacidad excedida: El límite máximo para este espacio es de ${CAPACIDAD_MAXIMA} invitados.`
+                    }), {
+                        status: 400,
+                        headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" }
                     });
                 }
 
@@ -107,6 +118,7 @@ Bun.serve({
                     hora_inicio,
                     hora_fin,
                     cant_invitados: Number(cant_invitados),
+                    nombres_invitados: nombres_invitados || [],
                     id_usuario: Number(id_usuario),
                     id_espacio: Number(id_espacio),
                     estado: "Pendiente" //Estado por defecto según el diseño conceptual
@@ -114,7 +126,7 @@ Bun.serve({
 
                 //Responder con HTTP 201 Created y los datos de la reserva persistida
                 return new Response(JSON.stringify({
-                    mensaje: "Reserva creada exitosamente de forma digital",
+                    mensaje: "Reserva creada exitosamente.",
                     reserva: nuevaReserva[0]
                 }), {
                     status: 201,

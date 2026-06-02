@@ -9,6 +9,7 @@ export default function FormularioReserva() {
     const [mensajeError, setMensajeError] = useState('');
     const [cargando, setCargando] = useState(false);
     const [bloquesOcupados, setBloquesOcupados] = useState([]);
+    const [nombresInput, setNombresInput] = useState('');
 
     useEffect(() => {
       const consultarDisponibilidad = async () => {
@@ -40,6 +41,7 @@ export default function FormularioReserva() {
             hora_inicio: `${horaInicio}:00`,
             hora_fin: `${horaFin}:00`,
             cant_invitados: Number(invitados),
+            nombres_invitados: nombresInput.split(',').map(n => n.trim()).filter(n => n !== ''),
             id_usuario: 1, //ID estático simulando al residente logueado por ahora
             id_espacio: 2 //ID estático simulando la sala de eventos por ahora
         };
@@ -120,6 +122,20 @@ export default function FormularioReserva() {
             value={invitados}
             onChange={(e) => setInvitados(e.target.value)}
             className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+          />
+        </div>
+
+        {/* Lista de invitados */}
+        <div>
+          <label className='block text-sm font-semibold text-gray-700 mb-1'>
+            Nombres de los Invitados (Separados por comas)
+          </label>
+          <textarea
+            placeholder='Ej.: Juan Pérez, María Soto, Carlos Muñoz...'
+            value={nombresInput}
+            onChange={(e) => setNombresInput(e.target.value)}
+            rows="2"
+            className='w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm'
           />
         </div>
 
