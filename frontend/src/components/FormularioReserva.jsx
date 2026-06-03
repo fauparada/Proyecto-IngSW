@@ -10,6 +10,7 @@ export default function FormularioReserva() {
     const [cargando, setCargando] = useState(false);
     const [bloquesOcupados, setBloquesOcupados] = useState([]);
     const [nombresInput, setNombresInput] = useState('');
+    const [departamento, setDepartamento] = useState('');
 
     useEffect(() => {
       const consultarDisponibilidad = async () => {
@@ -42,7 +43,7 @@ export default function FormularioReserva() {
             hora_fin: `${horaFin}:00`,
             cant_invitados: Number(invitados),
             nombres_invitados: nombresInput.split(',').map(n => n.trim()).filter(n => n !== ''),
-            id_usuario: 1, //ID estático simulando al residente logueado por ahora
+            id_usuario: Number(departamento), //Ahora el ID corresponde al depto. del que hace la reserva para llevar un registro
             id_espacio: 2 //ID estático simulando la sala de eventos por ahora
         };
 
@@ -110,6 +111,19 @@ export default function FormularioReserva() {
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
           </div>
+        </div>
+
+        {/* Número de Departamento */}
+        <div>
+          <label className='block text-sm font-semibold text-gray-700 mb-1'>Número de Departamento</label>
+          <input
+            type='number'
+            placeholder='Ej. 504'
+            required
+            value={departamento}
+            onChange={(e) => setDepartamento(e.target.value)}
+            className='w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500'
+          />
         </div>
 
         {/* Cantidad de Invitados */}

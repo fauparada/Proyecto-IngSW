@@ -92,6 +92,10 @@ Bun.serve({
                         and(
                             eq(reservas.fecha, fecha),
                             eq(reservas.id_espacio, Number(id_espacio)),
+                            or(
+                                eq(reservas.estado, "Pendiente"),
+                                eq(reservas.estado, "Aprobada")
+                            ),
                             //Lógica de choque de bloques: (InicioNuevo < FinExistente) AND (FinNuevo > InicioExistente)
                             and(
                                 lte(reservas.hora_inicio, hora_fin),
@@ -137,6 +141,87 @@ Bun.serve({
                 });
             } catch (error) {
                 return new Response(JSON.stringify({ error: "Error interno al procesar la solicitud" }), {
+                    status: 500,
+                    headers: { "Content-Type": "application/json" }
+                });
+            }
+        }
+        
+
+        //3. Endpoint para cancelar reserva
+        if (req.method === "POST" && url.pathname === "/api/reservas/cancelar") {
+            try {
+                const body = await req.json();
+                const { id_reserva, id_usuario } = body; //id_usuario es el número de departamento
+
+                if (!id_reserva || !id_usuario) {
+                    return new Response(JSON.stringify({ error: "Faltan campos obligatorios: id_reserva e id_usuario."}), {
+                        status: 400,
+                        headers: { "Content-Type": "application/json" }
+                    });
+                }
+
+                //Buscar la reserva en PostgreSQL
+                const reservaExistente = await db.select().from(reservas).where(eq(reservas.id_reserva, Number(id_reserva)));
+                if (reservaExistente.length === 0) {
+                    return new Response(JSON.stringify({ error: "La reserva solicitada no existe." }), {
+                        status: 404,
+                        headers: { "Content_Type": "application/json", "Access-Control-Allow-Origin": "*" }
+                    });
+                }
+
+                //Validación de seguridad: coincide el depto.?
+                if (reservaExistente[0].id_usuario !== Number(id_usuario)) {
+                    return new Response(JSON.stringify({
+                        error: "Acceso denegado: El número de departamento no coincide con la reserva."
+                    }), {
+                        status: 403,
+                        headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" }
+                    });
+                }
+
+                //Restricción de 24 horas antes
+                const registro = reservaExistente[0];
+                const stringFecha = String(registro.fecha);
+                const stringHora = String(registro.hora_inicio).slice(0, 5);
+
+                //objeto de fecha completo en la reserva
+                const [anio, mes, dia] = stringFecha.split('-').map(Number);
+                const [horas, minutos] = stringHora.split(':').map(Number);
+                const momentoReserva = new Date(anio, mes - 1, dia, horas, minutos);
+                const momentoActual = new Date();
+
+                //calculamos la diferencia en milisegundos y la pasamos a horas
+                const diferenciaMilisegundos = momentoReserva.getTime() - momentoActual.getTime();
+                const diferenciaHoras = diferenciaMilisegundos / (1000 * 60 * 60);
+
+                console.log(`Datos recuperados de BD -> Fecha: ${stringFecha}, Hora: ${stringHora}`);
+                console.log(`Horas de diferencia reales calculadas: ${diferenciaHoras.toFixed(2)}`);
+
+                if (isNaN(diferenciaHoras)) {
+                    return new Response(JSON.stringify({ error: "Error de consistencia de tiempos en el servidor." }), {
+                        status: 500,
+                        headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" }
+                    });
+                }
+
+                if (diferenciaHoras < 24) {
+                    return new Response(JSON.stringify({
+                        error: "Restricción de tiempo: No es posible cancelar una reserva si faltan menos de 24 horas para el evento."
+                    }), {
+                        status: 400,
+                        headers: {"Content-Type": "application/json", "Access-Control-Allow-Origin": "*"}
+                    });
+                }
+
+                //Eliminación, actualizar estado a 'Cancelada'
+                await db.update(reservas).set({ estado: "Cancelada" }).where(eq(reservas.id_reserva, Number(id_reserva)));
+                return new Response(JSON.stringify({ mensaje: "La reserva ha sido cancelada con éxito." }), {
+                    status: 200,
+                    headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" }
+                });
+            } catch (error) {
+                return new Response(JSON.stringify({ error: "Error interno al procesar la cancelación" }), {
                     status: 500,
                     headers: { "Content-Type": "application/json" }
                 });
