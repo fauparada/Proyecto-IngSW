@@ -1,5 +1,5 @@
 import { db } from './db';
-import { reservas } from './db/schema';
+import { espaciosComunes, reservas } from './db/schema';
 import { and, eq, lte, gte, or } from 'drizzle-orm';
 
 console.log("Iniciando el Servidor de Reservas Residenciales...");
@@ -74,15 +74,44 @@ Bun.serve({
                     });
                 }
 
+                //Buscar las reglas del espacio
+                const espacioReglas = await db
+                    .select()
+                    .from(espaciosComunes)
+                    .where(eq(espaciosComunes.id_espacio, Number(id_espacio)));
+
+                if (espacioReglas.length === 0) {
+                    return new Response(JSON.stringify({ error: "El espacio seleccionado no existe" }), { status: 404 });
+                }
+
+                const reglas = espacioReglas[0];
+
                 //Validación aforo máximo
-                const CAPACIDAD_MAXIMA = 20;
-                if(Number(cant_invitados) > CAPACIDAD_MAXIMA) {
+                if(Number(cant_invitados) > reglas.capacidad_maxima) {
                     return new Response(JSON.stringify({
-                        error: `Capacidad excedida: El límite máximo para este espacio es de ${CAPACIDAD_MAXIMA} invitados.`
+                        error: `Capacidad excedida: El límite máximo para este espacio es de ${reglas.capacidad_maxima} invitados.`
                     }), {
                         status: 400,
                         headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" }
                     });
+                }
+
+                //Validación horario de apertura
+                if (hora_inicio < reglas.hora_apertura || hora_fin > reglas.hora_cierre) {
+                    return new Response(JSON.stringify({
+                        error: `Horario fuera de rango: El espacio opera únicamente entre las ${reglas.hora_apertura.slice(0,5)} y las ${reglas.hora_cierre.slice(0,5)} hrs.`
+                    }), { status: 400, headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" } });
+                }
+
+                //Validación duración máxima
+                const [hIni, mIni] = hora_inicio.split(':').map(Number);
+                const [hFin, mFin] = hora_fin.split(':').map(Number);
+                const duracionReserva = (hFin + mFin/60) - (hIni + mIni/60);
+
+                if (duracionReserva > reglas.duracion_maxima_horas) {
+                    return new Response(JSON.stringify({
+                        error: `Tiempo excedido: La duración máxima permitida por reserva es de ${reglas.duracion_maxima_horas} horas.`
+                    }), { status: 400, headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" } });
                 }
 
                 const reservasConflictivas = await db
@@ -227,6 +256,173 @@ Bun.serve({
                 });
             }
         }
+
+        //4. endpoint para obtener reservas pendientes (admin)
+        if (req.method === "GET" && url.pathname === "/api/admin/pendientes") {
+            try {
+                const listaPendientes = await db.select().from(reservas).where(eq(reservas.estado, "Pendiente"));
+
+                return new Response(JSON.stringify({ reservas: listaPendientes }), {
+                    status: 200,
+                    headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" }
+                });
+
+            } catch (error) {
+                return new Response(JSON.stringify({ error: "Error al traer solicitudes pendientes" }), { status: 500 });
+            }
+        }
+
+        //5. endpoint para aprobar o rechazar reserva
+        if (req.method === "POST" && url.pathname === "/api/reservas/modificar-estado") {
+            try {
+                const body = await req.json();
+                const { id_reserva, nuevo_estado, motivo_rechazo } = body;
+
+                if (!id_reserva || !nuevo_estado) {
+                    return new Response(JSON.stringify({ error: "Faltan parámetros" }), { status: 400 });
+                }
+
+                //motivo obligatorio en caso de rechazo
+                if (nuevo_estado === "Rechazada" && (!motivo_rechazo || motivo_rechazo.trim() === "")) {
+                    return new Response(JSON.stringify({
+                        error: "Validación denegada: Es obligatorio indicar un motivo para rehazar la reserva."
+                    }), {
+                        status: 400,
+                        headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" }
+                    });
+                }
+
+                //actualizamos la reserva
+                await db.update(reservas).set({
+                    estado: nuevo_estado,
+                    motivo_rechazo: nuevo_estado == "Rechazada" ? motivo_rechazo : null
+                }).where(eq(reservas.id_reserva, Number(id_reserva)));
+
+                return new Response(JSON.stringify({
+                    mensaje: `La reserva ha sido ${nuevo_estado.toLowerCase()} con éxito.`
+                }), {
+                    status: 200,
+                    headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" }
+                });
+            } catch (error) {
+                return new Response(JSON.stringify({ error: "Error interno al procesar la decisión." }), { status: 500 });
+            }
+        }
+
+        //6. endpoint para vista diaria del conserje
+        if (req.method === "GET" && url.pathname === "/api/conserje/reservas") {
+            try {
+                const fecha = url.searchParams.get("fecha");
+
+                if (!fecha) {
+                    return new Response(JSON.stringify({ error: "La fecha es obligatoria" }), {
+                        status: 400,
+                        headers: { "Content-Type": "application/json" }
+                    });
+                }
+
+                //consultamos las reservas del día que no estén canceladas
+                const reservasDelDia = await db
+                    .select({
+                        id_reserva: reservas.id_reserva,
+                        hora_inicio: reservas.hora_inicio,
+                        hora_fin: reservas.hora_fin,
+                        departamento: reservas.id_usuario,
+                        nombre: reservas.nombre_residente,
+                        estado: reservas.estado,
+                        invitados: reservas.cant_invitados
+                    })
+                    .from(reservas)
+                    .where(
+                        and(
+                            eq(reservas.fecha, fecha),
+                            or(
+                                eq(reservas.estado, "Pendiente"),
+                                eq(reservas.estado, "Aprobada")
+                            )
+                        )
+                    );
+                return new Response(JSON.stringify({ reservas: reservasDelDia }), {
+                    status: 200,
+                    headers: {
+                        "Content-Type": "application/json",
+                        "Access-Control-Allow-Origin": "*"
+                    }
+                });
+            } catch (error) {
+                return new Response(JSON.stringify({ error: "Error al obtener la vista del conserje" }), {
+                    status: 500,
+                    headers: { "Content-Type": "application/json" }
+                });
+            }
+        } 
+
+        //endpoint para obtener todos los espacios comunes
+        if (req.method === "GET" && url.pathname === "/api/espacios") {
+            try {
+                const todosLosEspacios = await  db.select().from(espaciosComunes);
+                return new Response(JSON.stringify({ espacios: todosLosEspacios }), {
+                    status: 200,
+                    headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" }
+                });
+            } catch (error) {
+                return new Response(JSON.stringify({ error: "Error al listar espacios" }), { status: 500 });
+            }
+        }
+
+        //endpoint para crear un nuevo espacio (vista conserje)
+        if (req.method === "POST" && url.pathname === "/api/espacios") {
+            try {
+                const body = await req.json();
+                const { nombre, capacidad_maxima } = body;
+
+                if (!nombre) {
+                    return new Response(JSON.stringify({ error: "El nombre del espacio es requerido" }), { status: 400 });
+                }
+
+                const nuevoEspacio = await db.insert(espaciosComunes).values({
+                    nombre,
+                    capacidad_maxima: capacidad_maxima ? Number(capacidad_maxima) : 20
+                }).returning();
+
+                return new Response(JSON.stringify({ mensaje: "Espacio creado con éxito", espacio: nuevoEspacio[0] }), {
+                    status: 201,
+                    headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" }
+                });
+            } catch (error) {
+                return new Response(JSON.stringify({ error: "Error al crear espacio común" }), { status: 500 });
+            }
+        }
+
+        //endpoint para actualizar reglas
+        if (req.method === "POST" && url.pathname === "/api/espacios/configurar") {
+            try {
+                const body = await req.json();
+                const { id_espacio, hora_apertura, hora_cierre, capacidad_maxima, duracion_maxima_horas } = body;
+
+                if (!id_espacio) {
+                    return new Response(JSON.stringify({ error: "El ID del espacio es obligatorio." }), { status: 400 });
+                }
+
+                await db
+                    .update(espaciosComunes)
+                    .set({
+                        hora_apertura,
+                        hora_cierre,
+                        capacidad_maxima: Number(capacidad_maxima),
+                        duracion_maxima_horas: Number(duracion_maxima_horas)
+                    })
+                    .where(eq(espaciosComunes.id_espacio, Number(id_espacio)));
+                
+                return new Response(JSON.stringify({ mensaje: "Reglas de la sala actualizadas con éxito." }), {
+                    status: 200,
+                    headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" }
+                });
+            } catch (error) {
+                return new Response(JSON.stringify({ error: "Error al actualizar las reglas." }), { status: 500 });
+            }
+        }
+
         return new Response("Not Found", { status: 404 });
     },
 });

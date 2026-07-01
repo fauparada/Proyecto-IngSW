@@ -11,6 +11,31 @@ export default function FormularioReserva() {
     const [bloquesOcupados, setBloquesOcupados] = useState([]);
     const [nombresInput, setNombresInput] = useState('');
     const [departamento, setDepartamento] = useState('');
+    const [nombreResidente, setNombreResidente] = useState('');
+    const [espacios, setEspacios] = useState([]);
+    const [idEspacioSeleccionado, setIdEspacioSeleccionado] = useState('');
+    const [cargandoEspacios, setCargandoEspacios] = useState(true);
+
+    useEffect(() => {
+      const obtenerEspacios = async () => {
+        try {
+          const response = await fetch('http://localhost:4005/api/espacios');
+          const data = await response.json();
+          if (response.ok && data.espacios) {
+            setEspacios(data.espacios);
+            if(data.espacios.length > 0) {
+              setIdEspacioSeleccionado(data.espacios[0].id_espacio);
+            }
+          }
+        } catch (error) {
+          console.error("Error al cargar los espacios comunes en el formulario:", error);
+        } finally {
+          setCargandoEspacios(false);
+        }
+      };
+
+      obtenerEspacios();
+    }, []);
 
     useEffect(() => {
       const consultarDisponibilidad = async () => {
@@ -44,7 +69,8 @@ export default function FormularioReserva() {
             cant_invitados: Number(invitados),
             nombres_invitados: nombresInput.split(',').map(n => n.trim()).filter(n => n !== ''),
             id_usuario: Number(departamento), //Ahora el ID corresponde al depto. del que hace la reserva para llevar un registro
-            id_espacio: 2 //ID estático simulando la sala de eventos por ahora
+            id_espacio: Number(idEspacioSeleccionado), //ahora el id es dinámico
+            nombre_residente: nombreResidente
         };
 
         try {
@@ -151,6 +177,29 @@ export default function FormularioReserva() {
             rows="2"
             className='w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm'
           />
+        </div>
+
+        {/* Selector de espacio */}
+        <div className='flex flex-col space-y-1'>
+          <label className='text-xs font-bold text-gray-700'>Área Común a Reservar</label>
+
+          {cargandoEspacios ? (
+            <p className='text-xs text-gray-400 animate-pulse'>Cargando espacios...</p>
+          ) : espacios.length === 0 ? (
+            <p className='text-xs text-red-500 font-medium'>No hay áreas comunes registradas en el sistema.</p>
+          ) : (
+            <select
+              value={idEspacioSeleccionado}
+              onChange={(e) => setIdEspacioSeleccionado(e.target.value)}
+              className='w-full px-3 py-2 text-sm bg-white border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-800 font-medium'
+            >
+              {espacios.map((esp) => (
+                <option key={esp.id_espacio} value={esp.id_espacio}>
+                  {esp.nombre} (Capacidad máx.: {esp.capacidad_maxima} personas)
+                </option>
+              ))}
+            </select>
+          )}
         </div>
 
         {/* Botón de Envío */}
