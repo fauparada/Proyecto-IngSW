@@ -3,6 +3,7 @@ import CancelarReserva from './components/CancelarReserva';
 import { useState } from 'react';
 import VistaConserje from './components/VistaConserje';
 import GestionAdmin from './components/GestionAdmin';
+import ReportesAdmin from './components/ReportesAdmin';
 
 
 function App() {
@@ -58,6 +59,7 @@ function App() {
           <div className='animate-fade-in'>
             <VistaConserje />
             <GestionAdmin />
+            <ReportesAdmin />
           </div>
         )}
       </main>

@@ -1,6 +1,6 @@
 import { db } from './db';
 import { espaciosComunes, reservas } from './db/schema';
-import { and, eq, lte, gte, or } from 'drizzle-orm';
+import { and, eq, lte, gte, or, like } from 'drizzle-orm';
 
 console.log("Iniciando el Servidor de Reservas Residenciales...");
 
@@ -357,7 +357,7 @@ Bun.serve({
             }
         } 
 
-        //endpoint para obtener todos los espacios comunes
+        //7. endpoint para obtener todos los espacios comunes
         if (req.method === "GET" && url.pathname === "/api/espacios") {
             try {
                 const todosLosEspacios = await  db.select().from(espaciosComunes);
@@ -370,7 +370,7 @@ Bun.serve({
             }
         }
 
-        //endpoint para crear un nuevo espacio (vista conserje)
+        //8. endpoint para crear un nuevo espacio (vista conserje)
         if (req.method === "POST" && url.pathname === "/api/espacios") {
             try {
                 const body = await req.json();
@@ -394,7 +394,7 @@ Bun.serve({
             }
         }
 
-        //endpoint para actualizar reglas
+        //9. endpoint para actualizar reglas
         if (req.method === "POST" && url.pathname === "/api/espacios/configurar") {
             try {
                 const body = await req.json();
@@ -420,6 +420,97 @@ Bun.serve({
                 });
             } catch (error) {
                 return new Response(JSON.stringify({ error: "Error al actualizar las reglas." }), { status: 500 });
+            }
+        }
+
+        //10. endpoint para obtener un resumen de las métricas de las reservas
+        if (req.method === "GET" && url.pathname === "/api/admin/reporte") {
+            try {
+                const anio = url.searchParams.get("anio");
+                const mes = url.searchParams.get("mes"); // Formato "01" a "12"
+
+                if (!anio || !mes) {
+                    return new Response(JSON.stringify({ error: "Año y mes son obligatorios." }), { 
+                        status: 400,
+                        headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" }
+                    });
+                }
+
+                // 🚀 MATEMÁTICA DE FECHAS: Calculamos de forma exacta el último día del mes en JS
+                // Al poner día '0' del mes siguiente, JS automáticamente calcula el último día del mes actual (ej: 30 para junio)
+                const añoNum = Number(anio);
+                const mesNum = Number(mes);
+                
+                const primerDia = "01";
+                const ultimoDiaNum = new Date(añoNum, mesNum, 0).getDate(); 
+                const ultimoDia = ultimoDiaNum < 10 ? `0${ultimoDiaNum}` : `${ultimoDiaNum}`;
+
+                const fechaInicio = `${anio}-${mes}-${primerDia}`; // "2026-06-01"
+                const fechaFin = `${anio}-${mes}-${ultimoDia}`;    // "2026-06-30" de forma dinámica 🎉
+
+                // Volvemos a los operadores relacionales que Postgres maneja de forma nativa para fechas
+                const totalReservas = await db
+                    .select()
+                    .from(reservas)
+                    .where(
+                        and(
+                            gte(reservas.fecha, fechaInicio),
+                            lte(reservas.fecha, fechaFin)
+                        )
+                    );
+
+                // Procesamos las métricas con seguridad
+                const conteoHorarios: Record<string, number> = {};
+                totalReservas.forEach(r => {
+                    if (r.hora_inicio && r.hora_fin) {
+                        const bloque = `${r.hora_inicio.slice(0, 5)} - ${r.hora_fin.slice(0, 5)}`;
+                        conteoHorarios[bloque] = (conteoHorarios[bloque] || 0) + 1;
+                    }
+                });
+                
+                const horariosMasUsados = Object.entries(conteoHorarios)
+                    .map(([horario, cantidad]) => ({ horario, cantidad }))
+                    .sort((a, b) => b.cantidad - a.cantidad)
+                    .slice(0, 3);
+
+                const conteoResidentes: Record<string, { depto: number; nombre: string; cant: number }> = {};
+                totalReservas.forEach(r => {
+                    const depto = r.id_usuario || 0;
+                    const nombre = r.nombre_residente || 'Anónimo';
+                    const clave = `${depto}-${nombre}`;
+                    
+                    if (!conteoResidentes[clave]) {
+                        conteoResidentes[clave] = { depto, nombre, cant: 0 };
+                    }
+                    conteoResidentes[clave].cant += 1;
+                });
+
+                const residentesFrecuentes = Object.values(conteoResidentes)
+                    .sort((a, b) => b.cant - a.cant)
+                    .slice(0, 3);
+
+                return new Response(JSON.stringify({
+                    periodo: `${mes}/${anio}`,
+                    total: totalReservas.length,
+                    horariosMasUsados,
+                    residentesFrecuentes
+                }), {
+                    status: 200,
+                    headers: { 
+                        "Content-Type": "application/json", 
+                        "Access-Control-Allow-Origin": "*" 
+                    }
+                });
+
+            } catch (error) {
+                console.error("Error crítico en el endpoint de reportes:", error);
+                return new Response(JSON.stringify({ error: "Error interno al compilar el reporte métrico" }), { 
+                    status: 500, 
+                    headers: { 
+                        "Content-Type": "application/json", 
+                        "Access-Control-Allow-Origin": "*" 
+                    } 
+                });
             }
         }
 
