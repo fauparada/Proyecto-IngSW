@@ -1,6 +1,6 @@
 import { db } from './db';
-import { espaciosComunes, reservas, bloqueos } from './db/schema';
-import { and, eq, lte, gte, or, like, sql } from 'drizzle-orm';
+import { espaciosComunes, reservas, bloqueos, usuarios } from './db/schema';
+import { and, eq, lte, gte, or, like, sql, desc } from 'drizzle-orm';
 
 console.log("Iniciando el Servidor de Reservas Residenciales...");
 
@@ -160,7 +160,7 @@ Bun.serve({
 
                 if (fechasBloqueadas.length > 0) {
                     return new Response(JSON.stringify({
-                        error: `No se puede reservar. Esta fecha está bloqueada por la administración motivo: ${fechasBloqueadas[0].motivo}`
+                        error: `No se puede reservar. Esta fecha está bloqueada por la administración. Motivo: ${fechasBloqueadas[0].motivo}`
                     }), {
                         status: 400,
                         headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" }
@@ -568,12 +568,140 @@ Bun.serve({
             }
         }
 
+        //12. endpoint de autenticación SIMPLIFICADA
+        if (req.method === "POST" && url.pathname === "/api/auth/login") {
+            try {
+                const body = await req.json();
+                const { departamento, password } = body;
+
+                if (!departamento || !password) {
+                    return new Response(JSON.stringify({ error: "Departamento y contraseña requeridos." }), { 
+                        status: 400, headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" } 
+                    });
+                }
+
+                // Buscamos al residente por su departamento en Postgres
+                const usuarioExistente = await db
+                    .select()
+                    .from(usuarios)
+                    .where(eq(usuarios.departamento, departamento));
+
+                if (usuarioExistente.length === 0 || usuarioExistente[0].password !== password) {
+                    return new Response(JSON.stringify({ error: "Credenciales inválidas. Verifica tu departamento o clave." }), { 
+                        status: 401, headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" } 
+                    });
+                }
+
+                const user = usuarioExistente[0];
+
+                // Devolvemos el perfil del usuario (ocultando la contraseña por seguridad)
+                return new Response(JSON.stringify({
+                    mensaje: "Autenticación exitosa",
+                    usuario: {
+                        id_usuario: user.id_usuario,
+                        departamento: user.departamento,
+                        nombre: user.nombre
+                    }
+                }), {
+                    status: 200,
+                    headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" }
+                });
+
+            } catch (error) {
+                return new Response(JSON.stringify({ error: "Error en el servidor durante el login." }), { status: 500 });
+            }
+        }
+
+        //13. endpoint de sign-in
+        if (req.method === "POST" && url.pathname === "/api/auth/register") {
+            try {
+                const body = await req.json();
+                const { departamento, nombre, password } = body;
+
+                if (!departamento || !nombre || !password) {
+                    return new Response(JSON.stringify({ error: "Todos los campos son obligatorios." }), { 
+                        status: 400, headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" } 
+                    });
+                }
+
+                // Verificar si el departamento ya está registrado para evitar duplicados
+                const existe = await db.select().from(usuarios).where(eq(usuarios.departamento, departamento));
+                if (existe.length > 0) {
+                    return new Response(JSON.stringify({ error: "Este departamento ya tiene una cuenta activa." }), { 
+                        status: 400, headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" } 
+                    });
+                }
+
+                // Insertamos el nuevo residente de forma real en Postgres
+                await db.insert(usuarios).values({
+                    departamento,
+                    nombre,
+                    password
+                });
+
+                return new Response(JSON.stringify({ mensaje: "Usuario registrado con éxito." }), {
+                    status: 201, headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" }
+                });
+
+            } catch (error) {
+                return new Response(JSON.stringify({ error: "Error interno al registrar usuario." }), { status: 500 });
+            }
+        }
+
+        //14. endpoint para el historial de reservas
+        if (req.method === "GET" && url.pathname === "/api/reservas/historial") {
+            try {
+                const idUsuario = url.searchParams.get("id_usuario");
+                const estadoFiltro = url.searchParams.get("estado"); // Opcional: Aprobada, Cancelada, Rechazada, Todas
+
+                if (!idUsuario) {
+                    return new Response(JSON.stringify({ error: "El ID de usuario es requerido." }), { 
+                        status: 400,
+                        headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" }
+                    });
+                }
+
+                // 1. Iniciamos la condición base: buscar las reservas que le pertenecen a este usuario
+                const condiciones = [eq(reservas.id_usuario, Number(idUsuario))];
+
+                // 2. Si viene un filtro específico de estado desde la pantalla (y no es "Todas"), lo sumamos
+                if (estadoFiltro && estadoFiltro !== "Todas") {
+                    condiciones.push(eq(reservas.estado, estadoFiltro));
+                }
+
+                // 3. Consultamos a Postgres usando el operador 'and' para juntar los filtros
+                // y ordenamos cronológicamente de la más reciente a la más antigua (Criterio 1)
+                const historial = await db
+                    .select()
+                    .from(reservas)
+                    .where(and(...condiciones))
+                    .orderBy(desc(reservas.fecha)); 
+
+                // 4. Retornamos la respuesta limpia con sus cabeceras CORS correspondientes
+                return new Response(JSON.stringify({ historial }), {
+                    status: 200,
+                    headers: { 
+                        "Content-Type": "application/json", 
+                        "Access-Control-Allow-Origin": "*" 
+                    }
+                });
+
+            } catch (error) {
+                console.error("Error crítico al cargar el historial:", error);
+                return new Response(JSON.stringify({ error: "Error interno al compilar la bitácora histórica." }), { 
+                    status: 500,
+                    headers: { 
+                        "Content-Type": "application/json", 
+                        "Access-Control-Allow-Origin": "*" 
+                    }
+                });
+            }
+        }
+
+
         return new Response("Not Found", { status: 404 });
     },
 });
 
 console.log("Servidor HTTP escuchando activamente en el puerto 4005");
 
-function literal(fechaReserva: any): any {
-    throw new Error('Function not implemented.');
-}
