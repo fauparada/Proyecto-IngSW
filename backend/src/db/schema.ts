@@ -1,4 +1,13 @@
+import { password } from 'bun';
 import { pgTable, serial, date, time, integer, text } from 'drizzle-orm/pg-core';
+
+//Tabla de usuarios
+export const usuarios = pgTable("usuarios", {
+    id_usuario: serial("id_usuario").primaryKey(),
+    departamento: text("departamento").notNull(),
+    nombre: text("nombre").notNull(),
+    password: text("password").notNull(),        
+});
 
 //Tabla para los bloqueos
 export const bloqueos = pgTable("bloqueos", {
@@ -30,7 +39,7 @@ export const reservas = pgTable('reservas', {
     nombre_residente: text('nombre_residente').default('Anónimo').notNull(),
 
     //Llaves foráneas (IDs que conectan c/ otras clases)
-    id_usuario: integer('id_usuario').notNull(),
+    id_usuario: integer('id_usuario').references(() => usuarios.id_usuario).notNull(),
     id_espacio: integer('id_espacio').references(() => espaciosComunes.id_espacio).notNull(),
     nombres_invitados: text('nombres_invitados').array(),
 
