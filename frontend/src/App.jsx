@@ -4,6 +4,7 @@ import { useState } from 'react';
 import VistaConserje from './components/VistaConserje';
 import GestionAdmin from './components/GestionAdmin';
 import ReportesAdmin from './components/ReportesAdmin';
+import BloqueosAdmin from './components/BloqueosAdmin';
 
 
 function App() {
@@ -60,6 +61,7 @@ function App() {
             <VistaConserje />
             <GestionAdmin />
             <ReportesAdmin />
+            <BloqueosAdmin />
           </div>
         )}
       </main>

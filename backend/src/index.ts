@@ -1,6 +1,6 @@
 import { db } from './db';
-import { espaciosComunes, reservas } from './db/schema';
-import { and, eq, lte, gte, or, like } from 'drizzle-orm';
+import { espaciosComunes, reservas, bloqueos } from './db/schema';
+import { and, eq, lte, gte, or, like, sql } from 'drizzle-orm';
 
 console.log("Iniciando el Servidor de Reservas Residenciales...");
 
@@ -145,6 +145,29 @@ Bun.serve({
                     });
                 }
 
+                const fechaReserva = fecha; //la fecha que el residente eligió
+                const espacioReserva = Number(id_espacio);
+
+                const fechasBloqueadas = await db
+                    .select()
+                    .from(bloqueos)
+                    .where(
+                        and(
+                            eq(bloqueos.id_espacio, espacioReserva),
+                            sql`${fechaReserva}::date BETWEEN ${bloqueos.fecha_inicio} AND ${bloqueos.fecha_fin}`
+                        )
+                    );
+
+                if (fechasBloqueadas.length > 0) {
+                    return new Response(JSON.stringify({
+                        error: `No se puede reservar. Esta fecha está bloqueada por la administración motivo: ${fechasBloqueadas[0].motivo}`
+                    }), {
+                        status: 400,
+                        headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" }
+                    });
+                }
+
+
                 //Si no hay conflictos, insertar la reserva en PostgreSQL usando Drizzle
                 const nuevaReserva = await db.insert(reservas).values({
                     fecha,
@@ -169,9 +192,10 @@ Bun.serve({
                     }
                 });
             } catch (error) {
+                console.error("Error crítico en validación de bloqueo:", error);
                 return new Response(JSON.stringify({ error: "Error interno al procesar la solicitud" }), {
                     status: 500,
-                    headers: { "Content-Type": "application/json" }
+                    headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" }
                 });
             }
         }
@@ -436,7 +460,7 @@ Bun.serve({
                     });
                 }
 
-                // 🚀 MATEMÁTICA DE FECHAS: Calculamos de forma exacta el último día del mes en JS
+                // MATEMÁTICA DE FECHAS: Calculamos de forma exacta el último día del mes en JS
                 // Al poner día '0' del mes siguiente, JS automáticamente calcula el último día del mes actual (ej: 30 para junio)
                 const añoNum = Number(anio);
                 const mesNum = Number(mes);
@@ -514,8 +538,42 @@ Bun.serve({
             }
         }
 
+        //11. endpoint para guardar el bloqueo
+        if (req.method === "POST" && url.pathname === "/api/admin/bloqueos") {
+            try {
+                const body = await req.json();
+                const { id_espacio, fecha_inicio, fecha_fin, motivo } = body;
+
+                // Validación estricta del motivo obligatorio (Criterio 2)
+                if (!id_espacio || !fecha_inicio || !fecha_fin || !motivo.trim()) {
+                    return new Response(JSON.stringify({ error: "Todos los campos, incluido el motivo, son obligatorios." }), { 
+                        status: 400,
+                        headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" }
+                    });
+                }
+
+                await db.insert(bloqueos).values({
+                    id_espacio: Number(id_espacio),
+                    fecha_inicio,
+                    fecha_fin,
+                    motivo
+                });
+
+                return new Response(JSON.stringify({ message: "Rango de fechas bloqueado exitosamente." }), {
+                    status: 200,
+                    headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" }
+                });
+            } catch (error) {
+                return new Response(JSON.stringify({ error: "Error al registrar el bloqueo." }), { status: 500 });
+            }
+        }
+
         return new Response("Not Found", { status: 404 });
     },
 });
 
 console.log("Servidor HTTP escuchando activamente en el puerto 4005");
+
+function literal(fechaReserva: any): any {
+    throw new Error('Function not implemented.');
+}

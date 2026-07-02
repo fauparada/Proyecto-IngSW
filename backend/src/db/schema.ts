@@ -1,5 +1,14 @@
 import { pgTable, serial, date, time, integer, text } from 'drizzle-orm/pg-core';
 
+//Tabla para los bloqueos
+export const bloqueos = pgTable("bloqueos", {
+    id_bloqueo: serial("id_bloqueo").primaryKey(),
+    id_espacio: integer("id_espacio").references(() => espaciosComunes.id_espacio).notNull(),
+    fecha_inicio: date("fecha_inicio").notNull(),
+    fecha_fin: date("fecha_fin").notNull(),
+    motivo: text("motivo").notNull() // Criterio 2: Obligatorio
+});
+
 //Tabla de espacios del edificio
 export const espaciosComunes = pgTable('espacios_comunes', {
     id_espacio: serial('id_espacio').primaryKey(),
