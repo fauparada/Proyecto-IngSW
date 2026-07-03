@@ -425,12 +425,13 @@ Bun.serve({
                         id_reserva: reservas.id_reserva,
                         hora_inicio: reservas.hora_inicio,
                         hora_fin: reservas.hora_fin,
-                        departamento: reservas.id_usuario,
-                        nombre: reservas.nombre_residente,
+                        departamento: usuarios.departamento,
+                        nombre: usuarios.nombre,
                         estado: reservas.estado,
                         invitados: reservas.cant_invitados
                     })
                     .from(reservas)
+                    .innerJoin(usuarios, eq(reservas.id_usuario, usuarios.id_usuario))
                     .where(
                         and(
                             eq(reservas.fecha, fecha),

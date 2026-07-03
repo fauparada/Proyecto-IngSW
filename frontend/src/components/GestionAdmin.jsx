@@ -155,7 +155,7 @@ export default function GestionAdmin() {
       const data = await response.json();
 
       if (response.ok) {
-        setMensajeCobro({ tipo: 'exito', texto: '💸 Cobro asociado de forma exitosa.' });
+        setMensajeCobro({ tipo: 'exito', texto: 'Cobro asociado de forma exitosa.' });
         setIdReservaCobro(''); setMontoCobro(''); setMotivoCobro(''); setFechaCobro('');
         cargarResumenFinanciero(); // Refresca automáticamente la tabla de abajo
       } else {
