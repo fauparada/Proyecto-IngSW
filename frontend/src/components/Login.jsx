@@ -1,25 +1,31 @@
 import { useState } from 'react';
 
 export default function Login({ alLoguear }) {
-  const [esRegistro, setEsRegistro] = useState(false); //Controla si muestra Login o Sign-In
+  const [esRegistro, setEsRegistro] = useState(false);
   const [departamento, setDepartamento] = useState('');
   const [nombre, setNombre] = useState('');
   const [password, setPassword] = useState('');
+  const [email, setEmail] = useState(''); // Estado para el nuevo campo obligatorio
   const [error, setError] = useState('');
-  const [mensajeExito, setMensajeExito] = useState('');
+  const [cargando, setCargando] = useState(false);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
-    setMensajeExito('');
+    setCargando(true);
 
-    const endpoint = esRegistro ? '/api/auth/register' : '/api/auth/login';
+    // Definimos la URL según la acción que el usuario esté realizando
+    const url = esRegistro 
+      ? 'http://localhost:4005/api/auth/register' 
+      : 'http://localhost:4005/api/auth/login';
+
+    // El payload que enviamos al backend
     const payload = esRegistro 
-      ? { departamento, nombre, password } 
+      ? { departamento, nombre, password, email } 
       : { departamento, password };
 
     try {
-      const response = await fetch(`http://localhost:4005${endpoint}`, {
+      const response = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
@@ -29,11 +35,13 @@ export default function Login({ alLoguear }) {
 
       if (response.ok) {
         if (esRegistro) {
-          setMensajeExito("🎉 ¡Cuenta creada con éxito! Ahora puedes iniciar sesión.");
+          // Si se registró con éxito, lo cambiamos automáticamente al modo login
+          alert('¡Cuenta creada con éxito! Ahora puedes iniciar sesión.');
           setEsRegistro(false);
           setNombre('');
-        } else {
-          // Guardamos sesión real
+          setEmail('');
+        } else if (data.usuario) {
+          // Si el login es exitoso, guardamos en sessionStorage y disparamos el login en App.jsx
           sessionStorage.setItem('usuarioLogueado', JSON.stringify(data.usuario));
           alLoguear(data.usuario);
         }
@@ -41,93 +49,126 @@ export default function Login({ alLoguear }) {
         setError(data.error || 'Ocurrió un error inesperado.');
       }
     } catch (err) {
-      setError('No se pudo conectar con el servidor backend.');
+      console.error('Error en autenticación:', err);
+      setError('No se pudo establecer conexión con el servidor.');
+    } finally {
+      setCargando(false);
     }
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-slate-950 px-4">
-      <div className="max-w-md w-full space-y-6 bg-slate-900 p-8 rounded-2xl shadow-2xl border border-slate-800">
-        <div className="text-center">
-          <h2 className="text-2xl font-black text-amber-400">Edificio Residencial</h2>
-          <p className="text-xs text-slate-400 mt-1">
-            {esRegistro ? 'Registra una nueva cuenta de propietario' : 'Ingresa a tu cuenta de copropietario'}
-          </p>
-        </div>
+    <div className="min-h-screen bg-gray-50 flex flex-col justify-center py-12 sm:px-6 lg:px-8 animate-fade-in">
+      <div className="sm:mx-auto w-full max-w-md text-center">
+        <h2 className="text-3xl font-black tracking-wider text-slate-900 uppercase">
+          Portal de Reservas
+        </h2>
+        <p className="mt-2 text-xs text-gray-500 font-medium">
+          {esRegistro 
+            ? 'Crea una cuenta para gestionar tus espacios comunes' 
+            : 'Ingresa tus credenciales para acceder al sistema'
+          }
+        </p>
+      </div>
 
-        {error && (
-          <div className="p-3 bg-red-900/30 border border-red-500/50 text-red-200 text-xs rounded-lg text-center font-medium">
-            ⚠️ {error}
-          </div>
-        )}
-
-        {mensajeExito && (
-          <div className="p-3 bg-green-900/30 border border-green-500/50 text-green-200 text-xs rounded-lg text-center font-medium">
-            {mensajeExito}
-          </div>
-        )}
-
-        <form onSubmit={handleSubmit} className="space-y-4">
-          {/* Campo extra exclusivo para la creación de cuenta (Sign-In) */}
-          {esRegistro && (
+      <div className="mt-8 sm:mx-auto w-full max-w-md">
+        <div className="bg-white py-8 px-4 shadow-md sm:rounded-xl sm:px-10 border border-gray-100">
+          
+          <form onSubmit={handleSubmit} className="space-y-5">
             <div>
-              <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-1">Nombre Completo</label>
+              <label className="block text-[11px] font-bold text-gray-500 uppercase tracking-wider mb-1">
+                N° de Departamento
+              </label>
               <input
                 type="text"
-                placeholder="Ej: Faustina Parada"
-                value={nombre}
-                onChange={(e) => setNombre(e.target.value)}
-                className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-slate-100 placeholder-slate-600 focus:outline-none focus:border-amber-500 transition"
                 required
+                placeholder="Ej: 501"
+                value={departamento}
+                onChange={(e) => setDepartamento(e.target.value)}
+                className="w-full bg-gray-50 border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-800 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 transition font-medium"
               />
             </div>
-          )}
 
-          <div>
-            <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-1">N° Departamento</label>
-            <input
-              type="text"
-              placeholder="Ej: 301"
-              value={departamento}
-              onChange={(e) => setDepartamento(e.target.value)}
-              className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-slate-100 placeholder-slate-600 focus:outline-none focus:border-amber-500 transition"
-              required
-            />
+            {/* Campos condicionales exclusivos del registro */}
+            {esRegistro && (
+              <>
+                <div>
+                  <label className="block text-[11px] font-bold text-gray-500 uppercase tracking-wider mb-1">
+                    Nombre Completo
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="Ej: María González"
+                    value={nombre}
+                    onChange={(e) => setNombre(e.target.value)}
+                    className="w-full bg-gray-50 border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-800 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 transition font-medium"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-bold text-gray-500 uppercase tracking-wider mb-1">
+                    Correo Electrónico
+                  </label>
+                  <input
+                    type="email"
+                    required
+                    placeholder="ejemplo@correo.com"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    className="w-full bg-gray-50 border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-800 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 transition font-medium"
+                  />
+                </div>
+              </>
+            )}
+
+            <div>
+              <label className="block text-[11px] font-bold text-gray-500 uppercase tracking-wider mb-1">
+                Contraseña
+              </label>
+              <input
+                type="password"
+                required
+                placeholder="••••••••"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                className="w-full bg-gray-50 border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-800 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 transition font-medium"
+              />
+            </div>
+
+            {error && (
+              <div className="p-2.5 bg-red-50 border border-red-200 text-red-700 text-xs rounded-lg text-center font-medium">
+                ⚠️ {error}
+              </div>
+            )}
+
+            <div>
+              <button
+                type="submit"
+                disabled={cargando}
+                className="w-full py-2 px-4 border border-transparent rounded-lg shadow-sm text-xs font-bold text-white bg-slate-900 hover:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-slate-500 transition duration-150 disabled:bg-gray-300"
+              >
+                {cargando ? 'Procesando...' : esRegistro ? 'Registrar Mi Cuenta' : 'Iniciar Sesión'}
+              </button>
+            </div>
+          </form>
+
+          {/* Selector inferior para alternar vistas */}
+          <div className="mt-6 border-t border-gray-100 pt-4 text-center">
+            <button
+              type="button"
+              onClick={() => {
+                setEsRegistro(!esRegistro);
+                setError('');
+              }}
+              className="text-xs font-semibold text-blue-600 hover:underline"
+            >
+              {esRegistro 
+                ? '¿Ya tienes cuenta? Inicia sesión aquí' 
+                : '¿Eres nuevo residente? Regístrate aquí'
+              }
+            </button>
           </div>
 
-          <div>
-            <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-1">Contraseña / PIN</label>
-            <input
-              type="password"
-              placeholder="••••"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-slate-100 placeholder-slate-600 focus:outline-none focus:border-amber-500 transition"
-              required
-            />
-          </div>
-
-          <button
-            type="submit"
-            className="w-full py-2.5 bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold rounded-lg text-sm transition duration-150 shadow-lg shadow-amber-500/10"
-          >
-            {esRegistro ? 'Registrar Departamento' : 'Iniciar Sesión'}
-          </button>
-        </form>
-
-        {/* Botón conmutador para alternar la vista */}
-        <div className="text-center pt-2">
-          <button
-            type="button"
-            onClick={() => {
-              setEsRegistro(!esRegistro);
-              setError('');
-              setMensajeExito('');
-            }}
-            className="text-xs text-amber-400/80 hover:text-amber-400 underline transition"
-          >
-            {esRegistro ? '¿Ya tienes una cuenta? Inicia sesión aquí' : '¿Tu departamento no tiene cuenta? Regístrate aquí'}
-          </button>
         </div>
       </div>
     </div>
