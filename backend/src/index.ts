@@ -1,6 +1,7 @@
 import { db } from './db';
-import { espaciosComunes, reservas, bloqueos, usuarios } from './db/schema';
+import { espaciosComunes, reservas, bloqueos, usuarios, cobros } from './db/schema';
 import { and, eq, lte, gte, or, like, sql, desc } from 'drizzle-orm';
+import { enviarCorreo } from './utils/mailer';
 
 console.log("Iniciando el Servidor de Reservas Residenciales...");
 
@@ -284,15 +285,28 @@ Bun.serve({
         //4. endpoint para obtener reservas pendientes (admin)
         if (req.method === "GET" && url.pathname === "/api/admin/pendientes") {
             try {
-                const listaPendientes = await db.select().from(reservas).where(eq(reservas.estado, "Pendiente"));
+                const pendientes = await db
+                    .select({
+                        id_reserva: reservas.id_reserva,
+                        fecha: reservas.fecha,
+                        hora_inicio: reservas.hora_inicio,
+                        hora_fin: reservas.hora_fin,
+                        estado: reservas.estado,
+                        // Traemos los campos reales de la tabla usuarios
+                        nombre_residente: usuarios.nombre,      
+                        departamento: usuarios.departamento    
+                    })
+                    .from(reservas)
+                    .innerJoin(usuarios, eq(reservas.id_usuario, usuarios.id_usuario))
+                    .where(eq(reservas.estado, "Pendiente"));
 
-                return new Response(JSON.stringify({ reservas: listaPendientes }), {
+                return new Response(JSON.stringify({ reservas: pendientes }), {
                     status: 200,
                     headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" }
                 });
-
             } catch (error) {
-                return new Response(JSON.stringify({ error: "Error al traer solicitudes pendientes" }), { status: 500 });
+                console.error("Error al obtener pendientes:", error);
+                return new Response(JSON.stringify({ error: "Error interno al cargar solicitudes." }), { status: 500 });
             }
         }
 
@@ -321,6 +335,66 @@ Bun.serve({
                     estado: nuevo_estado,
                     motivo_rechazo: nuevo_estado == "Rechazada" ? motivo_rechazo : null
                 }).where(eq(reservas.id_reserva, Number(id_reserva)));
+
+                const infoReserva = await db
+                    .select({
+                        fecha: reservas.fecha,
+                        hora_inicio: reservas.hora_inicio,
+                        email_usuario: usuarios.email,
+                        nombre_usuario: usuarios.nombre
+                    })
+                    .from(reservas)
+                    .innerJoin(usuarios, eq(reservas.id_usuario, usuarios.id_usuario))
+                    .where(eq(reservas.id_reserva, Number(id_reserva)));
+
+                    console.log("🔍 Buscando datos para la reserva N°:", id_reserva);
+                    console.log("📊 ¿Se encontraron datos en el JOIN?:", infoReserva.length > 0 ? "SÍ" : "NO");
+
+                if (infoReserva.length > 0) {
+                    console.log("📧 Despachando correo a:", infoReserva[0].email_usuario);
+                    const datos = infoReserva[0];
+                    
+                    //Diseñamos la plantilla HTML según la decisión del administrador
+                    let asunto = "";
+                    let htmlContenido = "";
+
+                    if (nuevo_estado === "Aprobada") {
+                        asunto = "¡Tu reserva ha sido aprobada!";
+                        htmlContenido = `
+                            <div style="font-family: sans-serif; padding: 20px; color: #333;">
+                                <h2>Hola, ${datos.nombre_usuario}</h2>
+                                <p>Te informamos que tu solicitud de uso de espacio común ha sido <strong>APROBADA</strong> por la administración.</p>
+                                <hr style="border: 0; border-top: 1px solid #eee;" />
+                                <p><strong>Fecha:</strong> ${datos.fecha}</p>
+                                <p><strong>Bloque Horario:</strong> ${datos.hora_inicio.slice(0,5)} en adelante.</p>
+                                <br />
+                                <p>¡Disfruta tu espacio con responsabilidad!</p>
+                            </div>
+                        `;
+                    } else if (nuevo_estado === "Rechazada") {
+                        asunto = "Actualización de tu solicitud de reserva";
+                        htmlContenido = `
+                            <div style="font-family: sans-serif; padding: 20px; color: #333;">
+                                <h2>Hola, ${datos.nombre_usuario}</h2>
+                                <p>Lamentamos informarte que tu solicitud de reserva para el día <strong>${datos.fecha}</strong> ha sido <strong>RECHAZADA</strong> por la administración.</p>
+                                <div style="background-color: #fff5f5; border-left: 4px solid #e53e3e; padding: 12px; margin: 15px 0; border-radius: 4px;">
+                                    <strong>Motivo del rechazo indicado por administración:</strong><br />
+                                    ${motivo_rechazo || "No se especificaron detalles adicionales."}
+                                </div>
+                                <p>Puedes ingresar al portal para revisar la disponibilidad de otros bloques horarios.</p>
+                            </div>
+                        `;
+                    }
+
+                    //Despachamos de forma asíncrona (no bloquea la respuesta HTTP)
+                    enviarCorreo({
+                        to: datos.email_usuario,
+                        subject: asunto,
+                        html: htmlContenido
+                    });
+                } else {
+                    console.log("⚠️ Alerta: El JOIN quedó vacío. Revisa si el id_usuario de la reserva coincide con el de la tabla usuarios.");
+                }
 
                 return new Response(JSON.stringify({
                     mensaje: `La reserva ha sido ${nuevo_estado.toLowerCase()} con éxito.`
@@ -600,7 +674,8 @@ Bun.serve({
                     usuario: {
                         id_usuario: user.id_usuario,
                         departamento: user.departamento,
-                        nombre: user.nombre
+                        nombre: user.nombre,
+                        rol: user.rol
                     }
                 }), {
                     status: 200,
@@ -616,9 +691,9 @@ Bun.serve({
         if (req.method === "POST" && url.pathname === "/api/auth/register") {
             try {
                 const body = await req.json();
-                const { departamento, nombre, password } = body;
+                const { departamento, nombre, password, email } = body;
 
-                if (!departamento || !nombre || !password) {
+                if (!departamento || !nombre || !password || !email) {
                     return new Response(JSON.stringify({ error: "Todos los campos son obligatorios." }), { 
                         status: 400, headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" } 
                     });
@@ -636,7 +711,8 @@ Bun.serve({
                 await db.insert(usuarios).values({
                     departamento,
                     nombre,
-                    password
+                    password,
+                    email
                 });
 
                 return new Response(JSON.stringify({ mensaje: "Usuario registrado con éxito." }), {
@@ -672,8 +748,21 @@ Bun.serve({
                 // 3. Consultamos a Postgres usando el operador 'and' para juntar los filtros
                 // y ordenamos cronológicamente de la más reciente a la más antigua (Criterio 1)
                 const historial = await db
-                    .select()
+                    .select({
+                        id_reserva: reservas.id_reserva,
+                        fecha: reservas.fecha,
+                        hora_inicio: reservas.hora_inicio,
+                        hora_fin: reservas.hora_fin,
+                        cant_invitados: reservas.cant_invitados,
+                        estado: reservas.estado,
+                        motivo_rechazo: reservas.motivo_rechazo,
+                        // Traemos los datos del cobro si es que existen
+                        monto_cobro: cobros.monto,
+                        motivo_cobro: cobros.motivo,
+                        pagado_cobro: cobros.pagado
+                    })
                     .from(reservas)
+                    .leftJoin(cobros, eq(reservas.id_reserva, cobros.id_reserva))
                     .where(and(...condiciones))
                     .orderBy(desc(reservas.fecha)); 
 
@@ -695,6 +784,63 @@ Bun.serve({
                         "Access-Control-Allow-Origin": "*" 
                     }
                 });
+            }
+        }
+
+        //15. endpoint para registrar cobro/multa
+        if (req.method === "POST" && url.pathname === "/api/admin/cobros") {
+            try {
+                const body = await req.json();
+                const { id_reserva, monto, motivo, fecha_cobro } = body;
+
+                if (!id_reserva || !monto || !motivo || !fecha_cobro) {
+                    return new Response(JSON.stringify({ error: "Todos los campos son obligatorios." }), { 
+                        status: 400, headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" } 
+                    });
+                }
+
+                // Insertar el cobro real en la BD
+                await db.insert(cobros).values({
+                    id_reserva: Number(id_reserva),
+                    monto: Number(monto),
+                    motivo,
+                    fecha_cobro,
+                    pagado: false
+                });
+
+                return new Response(JSON.stringify({ mensaje: "Cobro/multa asociado con éxito." }), {
+                    status: 201, headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" }
+                });
+            } catch (error) {
+                return new Response(JSON.stringify({ error: "Error al registrar el cobro." }), { status: 500 });
+            }
+        }
+
+
+        //16. endpoint de registro acumulado por departamento
+        if (req.method === "GET" && url.pathname === "/api/admin/cobros/resumen") {
+            try {
+                // Hacemos un JOIN de cobros, reservas y usuarios para agrupar las deudas reales
+                const resumen = await db
+                    .select({
+                        id_cobro: cobros.id_cobro,
+                        departamento: usuarios.departamento,
+                        nombre: usuarios.nombre,
+                        monto: cobros.monto,
+                        motivo: cobros.motivo,
+                        fecha: cobros.fecha_cobro,
+                        pagado: cobros.pagado,
+                        id_reserva: cobros.id_reserva
+                    })
+                    .from(cobros)
+                    .innerJoin(reservas, eq(cobros.id_reserva, reservas.id_reserva))
+                    .innerJoin(usuarios, eq(reservas.id_usuario, usuarios.id_usuario));
+
+                return new Response(JSON.stringify({ resumen }), {
+                    status: 200, headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" }
+                });
+            } catch (error) {
+                return new Response(JSON.stringify({ error: "Error al compilar el resumen financiero." }), { status: 500 });
             }
         }
 

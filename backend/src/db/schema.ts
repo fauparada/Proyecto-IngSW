@@ -1,12 +1,14 @@
 import { password } from 'bun';
-import { pgTable, serial, date, time, integer, text } from 'drizzle-orm/pg-core';
+import { pgTable, serial, date, time, integer, text, boolean } from 'drizzle-orm/pg-core';
 
 //Tabla de usuarios
 export const usuarios = pgTable("usuarios", {
     id_usuario: serial("id_usuario").primaryKey(),
     departamento: text("departamento").notNull(),
     nombre: text("nombre").notNull(),
-    password: text("password").notNull(),        
+    password: text("password").notNull(), 
+    email: text("email").notNull(),
+    rol: text("rol").default("residente").notNull(),
 });
 
 //Tabla para los bloqueos
@@ -45,4 +47,14 @@ export const reservas = pgTable('reservas', {
 
     //nueva columna: guarda la razón por la que el admin. rechazó el bloque
     motivo_rechazo: text('motivo_rechazo'),
+});
+
+//Tabla de cobros
+export const cobros = pgTable("cobros", {
+    id_cobro: serial("id_cobro").primaryKey(),
+    monto: integer("monto").notNull(),                   // Monto en pesos chilenos
+    motivo: text("motivo").notNull(),                    // Ej: "Limpieza Quincho" o "Daño inmobiliario"
+    fecha_cobro: date("fecha_cobro").notNull(),          // Fecha en que se emite
+    pagado: boolean("pagado").default(false).notNull(),  // Estado del pago
+    id_reserva: integer("id_reserva").references(() => reservas.id_reserva).notNull(),
 });
